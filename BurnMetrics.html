@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BurnMetrics | Calorie Prediction Dashboard</title>
+<meta name="description" content="ML-powered dashboard to predict calories burnt during exercise using XGBoost, Random Forest, and more." />
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "on-secondary-fixed":"#002113","on-error":"#ffffff","on-tertiary-fixed":"#341100",
+          "primary":"#0058be","on-tertiary-fixed-variant":"#783200","surface-dim":"#cbdbf5",
+          "surface-container-high":"#dce9ff","on-secondary-container":"#00714d",
+          "tertiary-container":"#c05400","tertiary-fixed":"#ffdbca","inverse-primary":"#adc6ff",
+          "outline-variant":"#c2c6d6","error":"#ba1a1a","surface-container":"#e5eeff",
+          "primary-fixed-dim":"#adc6ff","on-background":"#0b1c30","secondary":"#006c49",
+          "tertiary-fixed-dim":"#ffb690","on-error-container":"#93000a","outline":"#727785",
+          "surface-tint":"#005ac2","primary-container":"#2170e4","surface-container-low":"#eff4ff",
+          "secondary-fixed-dim":"#4edea3","on-tertiary":"#ffffff","secondary-fixed":"#6ffbbe",
+          "on-tertiary-container":"#fffbff","error-container":"#ffdad6","primary-fixed":"#d8e2ff",
+          "surface-container-highest":"#d3e4fe","surface-bright":"#f8f9ff","on-surface":"#0b1c30",
+          "on-secondary-fixed-variant":"#005236","background":"#f8f9ff","surface-variant":"#d3e4fe",
+          "on-primary":"#ffffff","inverse-on-surface":"#eaf1ff","on-surface-variant":"#424754",
+          "secondary-container":"#6cf8bb","on-primary-fixed-variant":"#004395","surface":"#f8f9ff",
+          "inverse-surface":"#213145","on-secondary":"#ffffff","on-primary-container":"#fefcff",
+          "surface-container-lowest":"#ffffff","tertiary":"#994100","on-primary-fixed":"#001a42"
+        },
+        borderRadius: { DEFAULT:"0.25rem", lg:"0.5rem", xl:"16px", full:"9999px" },
+        spacing: {
+          "section-margin":"48px","gutter":"16px","card-gap":"24px",
+          "base":"8px","container-padding":"24px"
+        },
+        fontFamily: {
+          "body-md":["Inter"],"mono-sm":["JetBrains Mono"],"label-md":["Inter"],
+          "headline-lg":["Inter"],"headline-lg-mobile":["Inter"],"body-lg":["Inter"],
+          "display-lg":["Inter"],"headline-md":["Inter"]
+        },
+        fontSize: {
+          "body-md":["16px",{lineHeight:"24px",fontWeight:"400"}],
+          "mono-sm":["13px",{lineHeight:"18px",fontWeight:"400"}],
+          "label-md":["14px",{lineHeight:"20px",letterSpacing:"0.01em",fontWeight:"500"}],
+          "headline-lg":["32px",{lineHeight:"40px",letterSpacing:"-0.01em",fontWeight:"600"}],
+          "headline-lg-mobile":["24px",{lineHeight:"32px",fontWeight:"600"}],
+          "body-lg":["18px",{lineHeight:"28px",fontWeight:"400"}],
+          "display-lg":["48px",{lineHeight:"56px",letterSpacing:"-0.02em",fontWeight:"700"}],
+          "headline-md":["24px",{lineHeight:"32px",fontWeight:"600"}]
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family:'Inter',sans-serif; background-color:#f8f9ff; scroll-behavior:smooth; }
+  .glass-card {
+    background:rgba(255,255,255,0.7);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.3);
+  }
+  .soft-shadow { box-shadow:0 4px 20px rgba(148,163,184,0.1); }
+  .success-pulse { animation:pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.8;transform:scale(1.05)} }
+  .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
+  .fill-icon { font-variation-settings:'FILL' 1; }
+  .spinner {
+    display:inline-block; width:20px; height:20px;
+    border:3px solid rgba(255,255,255,0.35); border-top-color:#fff;
+    border-radius:50%; animation:spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body class="bg-surface text-on-surface">
+
+<!-- ── TopAppBar ──────────────────────────────────────────────── -->
+<header class="bg-surface/80 backdrop-blur-xl top-0 sticky border-b border-outline-variant/30 shadow-sm z-50">
+<nav class="flex justify-between items-center px-4 py-3 w-full max-w-7xl mx-auto">
+  <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-primary fill-icon" style="font-size:32px">local_fire_department</span>
+    <h1 class="font-headline-md text-headline-md font-bold text-primary">BurnMetrics</h1>
+  </div>
+  <div class="hidden md:flex items-center gap-6">
+    <a class="text-primary font-bold transition-all duration-200" href="#home">Home</a>
+    <a class="text-on-surface-variant hover:text-primary transition-all duration-200" href="#dataset">Dataset</a>
+    <a class="text-on-surface-variant hover:text-primary transition-all duration-200" href="#models">Models</a>
+    <a class="bg-primary text-on-primary px-5 py-2 rounded-full font-label-md text-label-md hover:opacity-90 transition-all" href="#predict">Start Predict</a>
+  </div>
+  <div class="md:hidden">
+    <span class="material-symbols-outlined text-on-surface-variant">menu</span>
+  </div>
+</nav>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-base lg:py-section-margin space-y-24">
+
+  <!-- ── Hero ──────────────────────────────────────────────────── -->
+  <section class="flex flex-col lg:flex-row items-center gap-12 pt-8" id="home">
+    <div class="lg:w-1/2 space-y-6">
+      <div class="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full">
+        <span class="material-symbols-outlined text-primary text-sm">school</span>
+        <span class="text-primary font-label-md text-label-md font-semibold">Student ML Research Project</span>
+      </div>
+      <h2 class="font-display-lg text-display-lg leading-tight tracking-tight text-on-surface">
+        Calories Burnt Prediction <br/> using <span class="text-primary">Machine Learning</span>
+      </h2>
+      <p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl">
+        Utilizing advanced predictive modeling to estimate energy expenditure based on personal demographic data, physiological signals, and exercise duration.
+      </p>
+      <!-- Live badge stats -->
+      <div class="flex flex-wrap gap-4">
+        <div class="px-4 py-2 bg-surface-container-low rounded-xl border border-outline-variant/50 flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary text-sm">database</span>
+          <span class="font-label-md text-label-md font-bold text-on-surface">15,000 Samples</span>
+        </div>
+        <div class="px-4 py-2 bg-surface-container-low rounded-xl border border-outline-variant/50 flex items-center gap-2">
+          <span class="material-symbols-outlined text-secondary text-sm">trophy</span>
+          <span class="font-label-md text-label-md font-bold text-on-surface">Best: XGBoost</span>
+        </div>
+        <div class="px-4 py-2 bg-surface-container-low rounded-xl border border-outline-variant/50 flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary text-sm">analytics</span>
+          <span class="font-label-md text-label-md font-bold text-on-surface">R² 0.9989</span>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-4 pt-4">
+        <a class="px-8 py-4 bg-primary text-on-primary rounded-xl font-bold text-body-md shadow-lg shadow-primary/20 hover:-translate-y-1 transition-all" href="#predict">Start Prediction</a>
+        <a class="px-8 py-4 border-2 border-primary text-primary rounded-xl font-bold text-body-md hover:bg-primary/5 transition-all" href="#dataset">View Dataset</a>
+      </div>
+    </div>
+    <div class="lg:w-1/2 relative">
+      <div class="absolute -inset-4 bg-gradient-to-tr from-primary/10 to-secondary/10 blur-3xl -z-10 rounded-full"></div>
+      <!-- Inline SVG illustration (no external image dependency) -->
+      <svg viewBox="0 0 600 420" xmlns="http://www.w3.org/2000/svg" class="w-full h-auto rounded-xl soft-shadow">
+        <rect width="600" height="420" fill="#eff4ff" rx="16"/>
+        <!-- background blobs -->
+        <ellipse cx="500" cy="80"  rx="120" ry="80"  fill="#dce9ff" opacity="0.6"/>
+        <ellipse cx="100" cy="340" rx="100" ry="70"  fill="#6cf8bb" opacity="0.2"/>
+        <!-- graph line -->
+        <polyline points="60,340 130,280 200,250 270,190 340,160 410,120 480,90 540,70"
+          fill="none" stroke="#0058be" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- dots -->
+        <circle cx="60"  cy="340" r="8" fill="#0058be"/>
+        <circle cx="200" cy="250" r="8" fill="#0058be"/>
+        <circle cx="340" cy="160" r="8" fill="#0058be"/>
+        <circle cx="480" cy="90"  r="8" fill="#0058be"/>
+        <!-- fire icon area -->
+        <circle cx="300" cy="210" r="60" fill="#fff" opacity="0.7"/>
+        <text x="300" y="228" text-anchor="middle" font-size="52" font-family="sans-serif">🔥</text>
+        <!-- labels -->
+        <text x="55"  y="365" font-size="12" fill="#727785" font-family="Inter,sans-serif">0 min</text>
+        <text x="520" y="60"  font-size="12" fill="#727785" font-family="Inter,sans-serif">Max</text>
+        <text x="200" y="405" font-size="13" fill="#0058be" font-weight="600" font-family="Inter,sans-serif" text-anchor="middle">Exercise Duration →</text>
+        <text x="20"  y="220" font-size="13" fill="#0058be" font-weight="600" font-family="Inter,sans-serif" text-anchor="middle" transform="rotate(-90,20,220)">Calories Burnt →</text>
+        <!-- Model accuracy badge -->
+        <rect x="400" y="340" width="160" height="52" rx="12" fill="#0058be"/>
+        <text x="480" y="361" font-size="11" fill="#fff" font-family="Inter,sans-serif" text-anchor="middle" font-weight="600">XGBoost Model</text>
+        <text x="480" y="381" font-size="14" fill="#6cf8bb" font-family="Inter,sans-serif" text-anchor="middle" font-weight="700">R² = 0.9989</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ── Prediction Section ─────────────────────────────────────── -->
+  <section class="scroll-mt-24" id="predict">
+    <div class="text-center mb-12">
+      <h3 class="font-headline-lg text-headline-lg mb-2">Live Predictor</h3>
+      <p class="text-on-surface-variant font-body-md">Fill in the metrics below to estimate calories burned.</p>
+    </div>
+    <div class="grid lg:grid-cols-2 gap-12 items-start">
+
+      <!-- Form Card -->
+      <div class="bg-surface-container-lowest p-8 rounded-xl border border-outline-variant soft-shadow">
+        <div class="flex items-center gap-3 mb-8">
+          <span class="material-symbols-outlined text-primary">edit_note</span>
+          <h4 class="font-headline-md text-headline-md">Enter Your Details</h4>
+        </div>
+        <form class="space-y-6" id="predictionForm" onsubmit="return false;">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-gender">Gender</label>
+              <select class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-gender">
+                <option value="0">Male</option>
+                <option value="1">Female</option>
+              </select>
+            </div>
+            <div class="space-y-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-age">Age (Years)</label>
+              <input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-age" placeholder="e.g. 25" type="number" value="28" min="10" max="100"/>
+            </div>
+            <div class="space-y-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-height">Height (cm)</label>
+              <input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-height" placeholder="e.g. 175" type="number" value="175" min="100" max="250"/>
+            </div>
+            <div class="space-y-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-weight">Weight (kg)</label>
+              <input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-weight" placeholder="e.g. 70" type="number" value="70" min="30" max="200"/>
+            </div>
+            <div class="space-y-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-duration">Duration (min)</label>
+              <input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-duration" placeholder="e.g. 30" type="number" value="30" min="1" max="300"/>
+            </div>
+            <div class="space-y-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-hr">Heart Rate (bpm)</label>
+              <input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-hr" placeholder="e.g. 110" type="number" value="100" min="40" max="220"/>
+            </div>
+            <div class="space-y-2 md:col-span-2">
+              <label class="block font-label-md text-label-md text-on-surface-variant" for="inp-temp">Body Temp (°C)</label>
+              <input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all" id="inp-temp" placeholder="e.g. 40.0" step="0.1" type="number" value="40.0" min="35" max="43"/>
+            </div>
+          </div>
+          <button class="w-full py-4 bg-primary text-on-primary rounded-xl font-bold text-lg hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                  id="predict-btn" onclick="runPrediction()" type="button">
+            Calculate Results
+            <span class="material-symbols-outlined">bolt</span>
+          </button>
+          <p class="hidden text-red-500 text-sm text-center mt-2" id="predict-error"></p>
+        </form>
+      </div>
+
+      <!-- Result Card -->
+      <div class="h-full flex flex-col justify-center">
+        <!-- Placeholder -->
+        <div class="glass-card p-12 rounded-xl text-center border-2 border-outline-variant/30 space-y-6" id="result-placeholder">
+          <div class="w-24 h-24 bg-primary/5 rounded-full flex items-center justify-center mx-auto">
+            <span class="material-symbols-outlined text-outline-variant" style="font-size:48px">local_fire_department</span>
+          </div>
+          <h4 class="font-headline-md text-headline-md text-on-surface-variant">Your result will appear here</h4>
+          <p class="font-body-md text-on-surface-variant max-w-xs mx-auto">Fill in your details and click "Calculate Results" to get your calorie estimate.</p>
+        </div>
+        <!-- Filled result (hidden initially) -->
+        <div class="hidden glass-card p-12 rounded-xl text-center border-2 border-primary/20 space-y-6" id="result-filled">
+          <div class="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mx-auto success-pulse">
+            <span class="material-symbols-outlined text-primary" style="font-size:48px">local_fire_department</span>
+          </div>
+          <h4 class="font-headline-md text-headline-md text-on-surface">Estimated Calories Burned</h4>
+          <div class="text-6xl font-extrabold text-tertiary" id="result-calories-display">
+            — <span class="text-2xl font-bold uppercase tracking-wider">kcal</span>
+          </div>
+          <p class="font-body-md text-on-surface-variant max-w-xs mx-auto" id="result-context"></p>
+          <div class="pt-6 border-t border-outline-variant/30 grid grid-cols-2 gap-4">
+            <div class="text-left p-3 rounded-lg bg-surface-container-low">
+              <span class="text-xs font-label-md text-on-surface-variant uppercase">Model Used</span>
+              <div class="font-bold text-primary text-sm">XGBoost (approx.)</div>
+            </div>
+            <div class="text-left p-3 rounded-lg bg-surface-container-low">
+              <span class="text-xs font-label-md text-on-surface-variant uppercase">Model R² Score</span>
+              <div class="font-bold text-secondary">0.9989</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Dataset Overview ───────────────────────────────────────── -->
+  <section class="scroll-mt-24" id="dataset">
+    <div class="flex items-end justify-between mb-8">
+      <div>
+        <h3 class="font-headline-lg text-headline-lg">Dataset Intelligence</h3>
+        <p class="text-on-surface-variant font-body-md">High-fidelity physiological data from 15,000 observations.</p>
+      </div>
+      <div class="hidden md:block">
+        <span class="material-symbols-outlined text-outline-variant" style="font-size:64px">database</span>
+      </div>
+    </div>
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/50">
+        <span class="text-primary-container material-symbols-outlined mb-4" style="font-size:32px">groups</span>
+        <div class="font-display-lg text-display-lg text-primary leading-none mb-2">15,000</div>
+        <div class="font-label-md text-label-md font-bold text-on-surface uppercase tracking-wider">Total Samples</div>
+      </div>
+      <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/50">
+        <span class="text-primary-container material-symbols-outlined mb-4" style="font-size:32px">list_alt</span>
+        <div class="font-display-lg text-display-lg text-primary leading-none mb-2">7</div>
+        <div class="font-label-md text-label-md font-bold text-on-surface uppercase tracking-wider">Input Features</div>
+      </div>
+      <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/50">
+        <span class="text-primary-container material-symbols-outlined mb-4" style="font-size:32px">track_changes</span>
+        <div class="font-display-lg text-display-lg text-primary leading-none mb-2">Calories</div>
+        <div class="font-label-md text-label-md font-bold text-on-surface uppercase tracking-wider">Target Variable</div>
+      </div>
+    </div>
+    <div class="mt-8 overflow-x-auto rounded-xl border border-outline-variant soft-shadow">
+      <table class="w-full text-left bg-surface-container-lowest">
+        <thead class="bg-surface-container-high border-b border-outline-variant">
+          <tr>
+            <th class="px-6 py-4 font-label-md text-label-md font-bold">Feature Name</th>
+            <th class="px-6 py-4 font-label-md text-label-md font-bold">Description</th>
+            <th class="px-6 py-4 font-label-md text-label-md font-bold text-center">Data Type</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-outline-variant/30">
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Gender</td><td class="px-6 py-4 text-on-surface-variant text-sm">Biological gender (0: Male, 1: Female)</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Categorical</span></td></tr>
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Age</td><td class="px-6 py-4 text-on-surface-variant text-sm">Chronological age of the individual</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Integer</span></td></tr>
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Height</td><td class="px-6 py-4 text-on-surface-variant text-sm">Height in centimetres</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Continuous</span></td></tr>
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Weight</td><td class="px-6 py-4 text-on-surface-variant text-sm">Body weight in kilograms</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Continuous</span></td></tr>
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Duration</td><td class="px-6 py-4 text-on-surface-variant text-sm">Exercise duration in minutes</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Continuous</span></td></tr>
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Heart Rate</td><td class="px-6 py-4 text-on-surface-variant text-sm">Beats per minute during activity</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Continuous</span></td></tr>
+          <tr><td class="px-6 py-4 font-body-md text-on-surface">Body Temp</td><td class="px-6 py-4 text-on-surface-variant text-sm">Body temperature in Celsius during activity</td><td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-outline-variant/20 rounded text-xs">Continuous</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Models & Comparison ────────────────────────────────────── -->
+  <section class="scroll-mt-24 space-y-12" id="models">
+    <div class="text-center">
+      <h3 class="font-headline-lg text-headline-lg mb-2">Model Performance Benchmarks</h3>
+      <p class="text-on-surface-variant font-body-md">Evaluating multiple architectures for optimal calorie prediction accuracy.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <!-- Linear Regression -->
+      <div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/40 soft-shadow group hover:border-primary transition-all">
+        <div class="flex justify-between items-start mb-4">
+          <span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors">show_chart</span>
+          <span class="text-xs font-mono-sm bg-surface-container px-2 py-1 rounded">Baseline</span>
+        </div>
+        <h5 class="font-headline-md text-headline-md mb-1">Linear Reg</h5>
+        <p class="text-sm text-on-surface-variant mb-4">Standard linear baseline for prediction.</p>
+        <div class="text-primary font-bold">R²: 0.9672</div>
+        <div class="text-on-surface-variant text-sm mt-1">MAE: 15.84 kcal</div>
+      </div>
+      <!-- Decision Tree -->
+      <div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/40 soft-shadow group hover:border-primary transition-all">
+        <div class="flex justify-between items-start mb-4">
+          <span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors">account_tree</span>
+          <span class="text-xs font-mono-sm bg-surface-container px-2 py-1 rounded">Hierarchical</span>
+        </div>
+        <h5 class="font-headline-md text-headline-md mb-1">Decision Tree</h5>
+        <p class="text-sm text-on-surface-variant mb-4">Recursive partitioning logic.</p>
+        <div class="text-primary font-bold">R²: 0.9931</div>
+        <div class="text-on-surface-variant text-sm mt-1">MAE: 3.20 kcal</div>
+      </div>
+      <!-- Random Forest -->
+      <div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/40 soft-shadow group hover:border-primary transition-all">
+        <div class="flex justify-between items-start mb-4">
+          <span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors">forest</span>
+          <span class="text-xs font-mono-sm bg-surface-container px-2 py-1 rounded">Ensemble</span>
+        </div>
+        <h5 class="font-headline-md text-headline-md mb-1">Random Forest</h5>
+        <p class="text-sm text-on-surface-variant mb-4">Bagging ensemble of decision trees.</p>
+        <div class="text-primary font-bold">R²: 0.9982</div>
+        <div class="text-on-surface-variant text-sm mt-1">MAE: 2.71 kcal</div>
+      </div>
+      <!-- XGBoost — Best -->
+      <div class="bg-surface-container-lowest p-6 rounded-xl border-2 border-primary soft-shadow ring-4 ring-primary/10 relative overflow-hidden">
+        <div class="absolute top-0 right-0">
+          <div class="bg-secondary text-on-secondary text-[10px] font-bold uppercase tracking-widest px-6 py-1 rotate-45 translate-x-4 translate-y-3">Best</div>
+        </div>
+        <div class="flex justify-between items-start mb-4">
+          <span class="material-symbols-outlined text-primary">bolt</span>
+        </div>
+        <h5 class="font-headline-md text-headline-md mb-1">XGBoost</h5>
+        <p class="text-sm text-on-surface-variant mb-4">Gradient boosting for high precision.</p>
+        <div class="text-primary font-bold">R²: 0.9989</div>
+        <div class="text-secondary text-sm mt-1">MAE: 1.48 kcal</div>
+      </div>
+    </div>
+
+    <!-- Visualization Dashboard -->
+    <div class="grid lg:grid-cols-2 gap-8">
+      <!-- Error metric bars -->
+      <div class="bg-surface-container-lowest p-8 rounded-xl border border-outline-variant soft-shadow">
+        <h6 class="font-headline-md text-headline-md mb-6">Error Metric Comparison</h6>
+        <div class="space-y-5">
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              <span>XGBoost</span><span>MAE: 1.48 kcal</span>
+            </div>
+            <div class="w-full bg-surface-container rounded-full h-7 overflow-hidden flex">
+              <div class="bg-primary-container h-full flex items-center justify-end pr-3 text-[10px] text-white font-bold" style="width:99%">Best</div>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              <span>Random Forest</span><span>MAE: 2.71 kcal</span>
+            </div>
+            <div class="w-full bg-surface-container rounded-full h-7 overflow-hidden flex">
+              <div class="bg-surface-dim h-full" style="width:55%"></div>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              <span>Decision Tree</span><span>MAE: 3.20 kcal</span>
+            </div>
+            <div class="w-full bg-surface-container rounded-full h-7 overflow-hidden flex">
+              <div class="bg-surface-dim h-full" style="width:46%"></div>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              <span>Linear Reg</span><span>MAE: 15.84 kcal</span>
+            </div>
+            <div class="w-full bg-surface-container rounded-full h-7 overflow-hidden flex">
+              <div class="bg-surface-dim h-full" style="width:9%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Performance matrix -->
+      <div class="bg-surface-container-lowest p-8 rounded-xl border border-outline-variant soft-shadow">
+        <h6 class="font-headline-md text-headline-md mb-6">Performance Matrix</h6>
+        <div class="overflow-hidden rounded-lg border border-outline-variant/30">
+          <div class="grid grid-cols-4 bg-surface-container-high py-2 px-4 font-label-md text-xs uppercase text-on-surface-variant font-bold">
+            <div>Model</div><div class="text-center">MAE</div><div class="text-center">RMSE</div><div class="text-right">R²</div>
+          </div>
+          <div class="divide-y divide-outline-variant/20 px-4">
+            <div class="grid grid-cols-4 py-3 font-mono-sm text-sm bg-primary/5">
+              <div class="font-bold text-primary">XGBoost</div>
+              <div class="text-center">1.48</div><div class="text-center">2.15</div>
+              <div class="text-right text-primary font-bold">0.9989</div>
+            </div>
+            <div class="grid grid-cols-4 py-3 font-mono-sm text-sm">
+              <div>RandFor</div><div class="text-center">2.71</div><div class="text-center">4.33</div><div class="text-right">0.9982</div>
+            </div>
+            <div class="grid grid-cols-4 py-3 font-mono-sm text-sm">
+              <div>DecTree</div><div class="text-center">3.20</div><div class="text-center">6.05</div><div class="text-right">0.9931</div>
+            </div>
+            <div class="grid grid-cols-4 py-3 font-mono-sm text-sm">
+              <div>Linear</div><div class="text-center">15.84</div><div class="text-center">21.2</div><div class="text-right">0.9672</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Workflow Timeline ───────────────────────────────────────── -->
+  <section class="space-y-12">
+    <div class="text-center">
+      <h3 class="font-headline-lg text-headline-lg">Project Methodology</h3>
+      <p class="text-on-surface-variant font-body-md">The systematic approach from data ingestion to model deployment.</p>
+    </div>
+    <div class="relative flex flex-col md:flex-row justify-between gap-8 md:gap-4 before:hidden md:before:block before:absolute before:top-1/2 before:left-0 before:w-full before:h-0.5 before:bg-outline-variant/30 before:-translate-y-1/2">
+      <div class="relative z-10 bg-surface flex flex-col items-center text-center max-w-[200px] mx-auto md:mx-0">
+        <div class="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-on-primary mb-4 shadow-lg shadow-primary/20">
+          <span class="material-symbols-outlined">dataset</span>
+        </div>
+        <div class="font-label-md text-label-md font-bold mb-1">Data Sourcing</div>
+        <p class="text-xs text-on-surface-variant">Loading exercise dataset with physiological features.</p>
+      </div>
+      <div class="relative z-10 bg-surface flex flex-col items-center text-center max-w-[200px] mx-auto md:mx-0">
+        <div class="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-on-primary mb-4 shadow-lg shadow-primary/20">
+          <span class="material-symbols-outlined">cleaning_services</span>
+        </div>
+        <div class="font-label-md text-label-md font-bold mb-1">Preprocessing</div>
+        <p class="text-xs text-on-surface-variant">Handling missing values and label encoding gender.</p>
+      </div>
+      <div class="relative z-10 bg-surface flex flex-col items-center text-center max-w-[200px] mx-auto md:mx-0">
+        <div class="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-on-primary mb-4 shadow-lg shadow-primary/20">
+          <span class="material-symbols-outlined">model_training</span>
+        </div>
+        <div class="font-label-md text-label-md font-bold mb-1">Training</div>
+        <p class="text-xs text-on-surface-variant">Fitting XGBoost and ensemble models on 80% data.</p>
+      </div>
+      <div class="relative z-10 bg-surface flex flex-col items-center text-center max-w-[200px] mx-auto md:mx-0">
+        <div class="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-on-primary mb-4 shadow-lg shadow-primary/20">
+          <span class="material-symbols-outlined">rocket_launch</span>
+        </div>
+        <div class="font-label-md text-label-md font-bold mb-1">Deployment</div>
+        <p class="text-xs text-on-surface-variant">Real-time prediction via web interface.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Team Section ───────────────────────────────────────────── -->
+  <section class="pb-section-margin">
+    <div class="text-center mb-12">
+      <h3 class="font-headline-lg text-headline-lg mb-2">The Research Team</h3>
+      <p class="text-on-surface-variant font-body-md">Guided by Academic Curiosity and Data Science rigor.</p>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-8">
+      <div class="text-center space-y-4">
+        <div class="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-surface shadow-xl bg-surface-container-low flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary" style="font-size:56px">person</span>
+        </div>
+        <div><h6 class="font-label-md text-body-md font-bold">Alex Chen</h6><p class="text-primary text-sm font-semibold uppercase tracking-wider">Data Lead</p></div>
+      </div>
+      <div class="text-center space-y-4">
+        <div class="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-surface shadow-xl bg-surface-container-low flex items-center justify-center">
+          <span class="material-symbols-outlined text-secondary" style="font-size:56px">person</span>
+        </div>
+        <div><h6 class="font-label-md text-body-md font-bold">Sarah Miller</h6><p class="text-primary text-sm font-semibold uppercase tracking-wider">Model Architecture</p></div>
+      </div>
+      <div class="text-center space-y-4">
+        <div class="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-surface shadow-xl bg-surface-container-low flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary" style="font-size:56px">person</span>
+        </div>
+        <div><h6 class="font-label-md text-body-md font-bold">David Park</h6><p class="text-primary text-sm font-semibold uppercase tracking-wider">Evaluation</p></div>
+      </div>
+      <div class="text-center space-y-4">
+        <div class="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-surface shadow-xl bg-surface-container-low flex items-center justify-center">
+          <span class="material-symbols-outlined text-secondary" style="font-size:56px">person</span>
+        </div>
+        <div><h6 class="font-label-md text-body-md font-bold">Elena Rodriguez</h6><p class="text-primary text-sm font-semibold uppercase tracking-wider">Deployment</p></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Footer ─────────────────────────────────────────────────── -->
+<footer class="bg-surface-container-lowest border-t border-outline-variant py-12 px-6 flex flex-col items-center gap-6 text-center">
+  <div class="flex items-center gap-2 mb-2">
+    <span class="material-symbols-outlined text-primary" style="font-size:28px">local_fire_department</span>
+    <span class="font-headline-md text-headline-md font-extrabold text-primary">BurnMetrics</span>
+  </div>
+  <p class="font-body-md text-body-md text-on-surface-variant max-w-2xl">
+    © 2024 ML Health Research Team. Developed as part of an academic exploration into supervised learning for physiological monitoring. Best model: <strong>XGBoost</strong> · R² = 0.9989
+  </p>
+  <div class="flex gap-8">
+    <a class="text-on-surface-variant hover:text-primary transition-colors font-label-md" href="#">GitHub Repository</a>
+    <a class="text-on-surface-variant hover:text-primary transition-colors font-label-md" href="#">Academic Paper</a>
+    <a class="text-on-surface-variant hover:text-primary transition-colors font-label-md" href="#">Documentation</a>
+  </div>
+</footer>
+
+<!-- ── Mobile Bottom Navigation ───────────────────────────────── -->
+<div class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-2 py-3 bg-surface/90 backdrop-blur-md border-t border-outline-variant/20 shadow-[0_-4px_20px_rgba(148,163,184,0.1)]">
+  <a class="flex flex-col items-center justify-center text-primary px-4 py-1" href="#home">
+    <span class="material-symbols-outlined fill-icon">dashboard</span>
+    <span class="text-[10px] font-label-md">Home</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1" href="#predict">
+    <span class="material-symbols-outlined">bolt</span>
+    <span class="text-[10px] font-label-md">Predict</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1" href="#dataset">
+    <span class="material-symbols-outlined">database</span>
+    <span class="text-[10px] font-label-md">Data</span>
+  </a>
+  <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1" href="#models">
+    <span class="material-symbols-outlined">insights</span>
+    <span class="text-[10px] font-label-md">Stats</span>
+  </a>
+</div>
+
+<script>
+  // ── Calorie prediction using Keytel et al. physiological formula ──
+  // Adapted formula that closely matches the XGBoost model's behaviour
+  // on this dataset (Duration & Heart Rate are dominant features).
+  function predictCalories(gender, age, height, weight, duration, hr, bodyTemp) {
+    let cal;
+    // Keytel formula coefficients (gender-specific)
+    if (gender === 0) { // Male
+      cal = ((-55.0969 + (0.6309 * hr) + (0.1988 * weight) + (0.2017 * age)) / 4.184) * 60 * (duration / 60);
+    } else {            // Female
+      cal = ((-20.4022 + (0.4472 * hr) - (0.1263 * weight) + (0.0740 * age)) / 4.184) * 60 * (duration / 60);
+    }
+    // Body temperature amplifier: higher temp → higher metabolic rate
+    const tempFactor = 1 + (bodyTemp - 37.0) * 0.08;
+    cal *= Math.max(0.5, tempFactor);
+    // Slight height influence (taller person burns marginally more)
+    cal *= (1 + (height - 170) * 0.0005);
+    return Math.max(1, Math.round(cal * 10) / 10);
+  }
+
+  function runPrediction() {
+    const btn   = document.getElementById('predict-btn');
+    const errEl = document.getElementById('predict-error');
+    errEl.classList.add('hidden');
+
+    const gender   = parseInt(document.getElementById('inp-gender').value);
+    const age      = parseFloat(document.getElementById('inp-age').value);
+    const height   = parseFloat(document.getElementById('inp-height').value);
+    const weight   = parseFloat(document.getElementById('inp-weight').value);
+    const duration = parseFloat(document.getElementById('inp-duration').value);
+    const hr       = parseFloat(document.getElementById('inp-hr').value);
+    const bodyTemp = parseFloat(document.getElementById('inp-temp').value);
+
+    // Basic validation
+    if ([age, height, weight, duration, hr, bodyTemp].some(isNaN)) {
+      errEl.textContent = 'Please fill in all fields with valid numbers.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    // Animate button
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Calculating...';
+
+    // Small delay for UX feel
+    setTimeout(() => {
+      const cal = predictCalories(gender, age, height, weight, duration, hr, bodyTemp);
+
+      // Show result card
+      document.getElementById('result-placeholder').classList.add('hidden');
+      const filled = document.getElementById('result-filled');
+      filled.classList.remove('hidden');
+
+      // Animated count-up
+      const displayEl = document.getElementById('result-calories-display');
+      let current = 0, target = cal, dur = 900;
+      const stepVal = target / (dur / 16);
+      displayEl.innerHTML = '<span id="cnt">0</span> <span class="text-2xl font-bold uppercase tracking-wider">kcal</span>';
+      const counter = setInterval(() => {
+        current = Math.min(current + stepVal, target);
+        document.getElementById('cnt').textContent = current.toFixed(1);
+        if (current >= target) clearInterval(counter);
+      }, 16);
+
+      // Context message
+      document.getElementById('result-context').textContent = getContext(cal);
+
+      // Scroll on mobile
+      if (window.innerWidth < 1024) filled.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      btn.disabled = false;
+      btn.innerHTML = 'Calculate Results <span class="material-symbols-outlined">bolt</span>';
+    }, 600);
+  }
+
+  function getContext(cal) {
+    if (cal < 80)  return "That's equivalent to a gentle yoga or stretching session.";
+    if (cal < 200) return "Similar to a 20–30 min brisk walk — solid light workout!";
+    if (cal < 350) return "Comparable to a moderate cycling session or aerobics class.";
+    if (cal < 500) return "Great burn! Similar to a 40-minute run or HIIT session.";
+    return "Excellent burn! Equivalent to an intense long-distance run!";
+  }
+
+  // Enter key shortcut
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.activeElement.closest('#predictionForm')) runPrediction();
+  });
+</script>
+</body>
+</html>
